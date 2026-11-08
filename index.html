@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="코스트코">
+<title>코스트코 데일리 업데이트</title>
+<style>
+  :root { --red:#e31837; --blue:#005daa; --bg:#f5f5f7; --card:#fff; --text:#222; --sub:#888; --line:#e6e6e6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --card:#1c1c1e; --text:#f2f2f2; --sub:#999; --line:#333; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif; }
+  header { position:sticky; top:0; z-index:10; background:var(--bg); padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 8px; border-bottom:1px solid var(--line); }
+  h1 { font-size:1.15rem; margin:0 0 2px; }
+  .updated { font-size:.78rem; color:var(--sub); margin-bottom:8px; }
+  .tabs { display:flex; gap:6px; margin-bottom:8px; }
+  .tab { flex:1; padding:8px 0; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:20px; font-size:.9rem; }
+  .tab.active { background:var(--red); border-color:var(--red); color:#fff; font-weight:600; }
+  input[type=search] { width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); font-size:1rem; }
+  .count { font-size:.8rem; color:var(--sub); margin:8px 12px 0; }
+  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; padding:10px 12px calc(24px + env(safe-area-inset-bottom,0px)); }
+  @media (min-width:700px) { .grid { grid-template-columns:repeat(3,1fr); } }
+  @media (min-width:1000px) { .grid { grid-template-columns:repeat(4,1fr); } }
+  .card { background:var(--card); border-radius:12px; overflow:hidden; border:1px solid var(--line); }
+  .card a { color:inherit; text-decoration:none; display:block; }
+  .card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#fff; display:block; }
+  .info { padding:8px 10px 12px; }
+  .name { font-size:.88rem; font-weight:600; line-height:1.3; height:2.6em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .old { font-size:.8rem; color:var(--sub); text-decoration:line-through; min-height:1.1em; margin-top:4px; }
+  .price { font-size:1.1rem; font-weight:700; color:var(--red); }
+  .badge { display:inline-block; background:var(--red); color:#fff; border-radius:6px; padding:0 6px; font-size:.72rem; margin-left:4px; vertical-align:middle; }
+  .badge.new { background:var(--blue); }
+  .empty { text-align:center; color:var(--sub); padding:48px 20px; grid-column:1/-1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 코스트코 데일리 업데이트</h1>
+  <div class="updated" id="updated">🕒 마지막 업데이트: 불러오는 중...</div>
+  <div class="tabs">
+    <button class="tab active" data-f="전체">전체</button>
+    <button class="tab" data-f="신상품">신상품</button>
+    <button class="tab" data-f="할인상품">할인상품</button>
+  </div>
+  <input type="search" id="q" placeholder="🔍 상품명 검색">
+</header>
+<div class="count" id="count"></div>
+<main class="grid" id="grid"></main>
+<script>
+let ITEMS = [], filter = "전체", keyword = "";
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const won = n => n == null ? "가격 정보 없음" : n.toLocaleString("ko-KR") + "원";
+function card(it) {
+  let oldLine = '<div class="old">&nbsp;</div>', badge = "";
+  if (it.old && it.price && it.old > it.price) {
+    oldLine = '<div class="old">' + (it.prev ? "최근 최고가 " : "") + won(it.old) + '</div>';
+    badge = '<span class="badge">' + Math.round((it.old - it.price) / it.old * 100) + '%↓</span>';
+  } else if (it.cat === "할인상품") badge = '<span class="badge">할인가</span>';
+  else if (it.cat === "신상품") badge = '<span class="badge new">NEW</span>';
+  return '<div class="card"><a href="' + esc(it.link) + '" target="_blank" rel="noopener">' +
+    '<img src="' + esc(it.img) + '" loading="lazy" alt="">' +
+    '<div class="info"><div class="name">' + esc(it.name) + '</div>' + oldLine +
+    '<div class="price">' + won(it.price) + badge + '</div></div></a></div>';
+}
+function render() {
+  const kw = keyword.trim().toLowerCase();
+  const list = ITEMS.filter(it => (filter === "전체" || it.cat === filter) && (!kw || it.name.toLowerCase().includes(kw)));
+  document.getElementById("count").textContent = "총 " + list.length + "개 상품";
+  document.getElementById("grid").innerHTML = list.length ? list.map(card).join("") : '<div class="empty">조건에 맞는 상품이 없어요.</div>';
+}
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  b.classList.add("active"); filter = b.dataset.f; render();
+}));
+document.getElementById("q").addEventListener("input", e => { keyword = e.target.value; render(); });
+fetch("data.json?t=" + Date.now()).then(r => r.json()).then(d => {
+  ITEMS = d.items;
+  document.getElementById("updated").textContent = "🕒 마지막 업데이트: " + d.updated;
+  render();
+}).catch(() => { document.getElementById("updated").textContent = "데이터를 불러오지 못했어요"; });
+</script>
+</body>
+</html>
