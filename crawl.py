@@ -1,277 +1,277 @@
 # 코스트코 코리아 매일 자동 크롤러 (GitHub Actions에서 실행)
 # 결과물: data.json(상품 데이터), history.json(가격 기록), img/(상품 사진), index.html(화면)
 
-수입 IO
-json 가져오기
-os 가져오기
-가져오기 re
-가져오기 시간
-동시에.선물 가져오기 ThreadPoolExecutor
-datetime 가져오기 datetime, timelta
-urllib.parse 가져오기 urljoin에서
-zoneinfo에서 ZoneInfo 가져오기
+import io
+import json
+import os
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
 
-가져오기 요청
-bs4에서 BeautifulSoup 가져오기
-PIL 가져오기 이미지에서
+import requests
+from bs4 import BeautifulSoup
+from PIL import Image
 
 # ===== 설정 =====
-MAX_PAGES = 3 # 카테고리당 페이지 수 (1페이지 = 약 48개)
-출처 = [
- ("할인상품", "https://www.costco.co.kr/Special-Price-Offers/c/SpecialPriceOffers "),
- ("신상품", "https://www.costco.co.kr/c/whatsnew "),
+MAX_PAGES = 3  # 카테고리당 페이지 수 (1페이지 = 약 48개)
+SOURCES = [
+    ("할인상품", "https://www.costco.co.kr/Special-Price-Offers/c/SpecialPriceOffers"),
+    ("신상품", "https://www.costco.co.kr/c/whatsnew"),
 ]
-BASE = "https://www.costco.co.kr "
-헤더 = {
- "사용자 에이전트": (
-        "모질라/5.0(Windows NT 10.0, Win64, x64) AppleWebKit/537.36"
-        "(KHTML, 게코처럼) 크롬/124.0 사파리/537.36"
- ),
- "언어 수락": "ko-KR,ko;q=0.9",
+BASE = "https://www.costco.co.kr"
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept-Language": "ko-KR,ko;q=0.9",
 }
-PRICE_RE = re.compile(r"^[\\d,]+원$)
-역사_일수 = 30
+PRICE_RE = re.compile(r"^[\d,]+원$")
+HISTORY_DAYS = 30
 
 
-def to_int(텍스트):
- 숫자 = re.sub(r "[^\\d], ", str(텍스트)
- 숫자가 없으면 int(자리 수) 반환 없음
+def to_int(text):
+    digits = re.sub(r"[^\d]", "", str(text))
+    return int(digits) if digits else None
 
 
 def is_product_img(img):
- src = img.get("src") or img.get("data-src") or ""
- = img.find_parent ("a", href=True)
- src에서 "/medias/"를 반환하고 a는 없음이 아니며 a["href"]에서 "/p/"를 반환합니다
+    src = img.get("src") or img.get("data-src") or ""
+    a = img.find_parent("a", href=True)
+    return "/medias/" in src and a is not None and "/p/" in a["href"]
 
 
 def find_card(a):
- 노드 = a
- _ 범위 (8)에서:
- 노드 = node.parent
- 노드가 없음인 경우:
- 돌아가다 없음.
- 만약 합(i에 대한 i)이라면.find_all ("img")가 _product_img(i) > 1인 경우:
- 없음을 반환합니다.
- 만약 (node.stripped_strings에서 s에 대한 PRICE_RE.match(들):
- 반환 노드
- 돌아가다 없음.
+    node = a
+    for _ in range(8):
+        node = node.parent
+        if node is None:
+            return None
+        if sum(1 for i in node.find_all("img") if is_product_img(i)) > 1:
+            return None
+        if any(PRICE_RE.match(s) for s in node.stripped_strings):
+            return node
+    return None
 
 
-def find_old_price(카드, 현재):
- cands = card.find_all(["del", "s", "strike"])
- cands += card.find_all(class_=re.compile(r"오리지널|비포|스트라이크|리스트 가격"), re.I))
- 캔드 단위로 c:
- m = re.search(r "[\\d, [{3,}원", c.get_text(strip=True))
- 만약 m:
- 이전 = to_int(m.group ())
- 오래된 경우와 현재의 경우, 그리고 오래된 경우 > 현재:
- 오래된 것으로 돌아가기
- 발견 = parse_page(r.text, 카테고리)
+def find_old_price(card, current):
+    cands = card.find_all(["del", "s", "strike"])
+    cands += card.find_all(class_=re.compile(r"original|before|strike|list-price", re.I))
+    for c in cands:
+        m = re.search(r"[\d,]{3,}원", c.get_text(strip=True))
+        if m:
+            old = to_int(m.group())
+            if old and current and old > current:
+                return old
+    return None
 
 
-def parse_page(html, 카테고리):
- 수프 = 뷰티풀 수프(html, "html.파서")
- 항목, 보기 = [], 설정 ()
- 수프에 넣어 주세요.find_all ("img"):
- 그렇지 않은 경우 _product_img(img):
- 계속하다.
- = img.find_parent ("a", href=True)
- 링크 = urljoin(BASE, a["href"])
- 링크가 표시되는 경우:
- 계속하다.
- 카드 = find_card(a)
- 카드가 없는 경우:
- 계속하다.
- 가격 = next((카드에서 s의 경우_int(s)), PRICE_RE.match(s)인 경우_stripped_strings, 없음)
- 이름 = (img.get ("alt") 또는 img.get ("title") 또는 a.get ("title") 또는 ".strip ()"
- 이름이나 가격이 없으면 없음:
- 계속하다.
- m = re.search(r"/p/(\d+)", link)
- 그렇지 않은 경우 m:
- 계속하다.
- see.add(링크)
- 항목.append(
- 인쇄 ("사진 실패:", 항목["코드"], e)
- "코드": m.group(1),
- "이름": 이름,
- "가격": 가격,
- "오래된": find_old_price(카드, 가격),
- "prev": 거짓,
- "src": urljoin(BASE, img.get("src") or img.get("data-src")),
- "링크": 링크,
- "고양이": 카테고리,
- }
- )
- 반품 항목
+def parse_page(html, category):
+    soup = BeautifulSoup(html, "html.parser")
+    items, seen = [], set()
+    for img in soup.find_all("img"):
+        if not is_product_img(img):
+            continue
+        a = img.find_parent("a", href=True)
+        link = urljoin(BASE, a["href"])
+        if link in seen:
+            continue
+        card = find_card(a)
+        if card is None:
+            continue
+        price = next((to_int(s) for s in card.stripped_strings if PRICE_RE.match(s)), None)
+        name = (img.get("alt") or img.get("title") or a.get("title") or "").strip()
+        if not name or price is None:
+            continue
+        m = re.search(r"/p/(\d+)", link)
+        if not m:
+            continue
+        seen.add(link)
+        items.append(
+            {
+                "code": m.group(1),
+                "name": name,
+                "price": price,
+                "old": find_old_price(card, price),
+                "prev": False,
+                "src": urljoin(BASE, img.get("src") or img.get("data-src")),
+                "link": link,
+                "cat": category,
+            }
+        )
+    return items
 
 
-세션 = 요청.세션()
-세션.headers.update(HEADERS)
-행 = []
-카테고리의 경우, 출처:
- 범위 내 페이지(MAX_PAGS):
- URL = base if page == 0 else f"{base}?page={page}"
- 시도:
- r = session.get(url, 타임아웃=30)
- 예외: e:
- 인쇄(f "[{category}] {페이지 + 1}페이지 오류: {e}})"
- 브레이크.
- 인쇄(f "[{category}] {페이지 + 1}페이지 -> {r.status_code})"
- 만약 r.status_code!= 200:
- 브레이크.
- 발견 = parse_page(r.text, 카테고리)
- 인쇄(f" 상품 {len(발견됨)}개")
- 발견되지 않은 경우:
- 브레이크.
- 행 += 발견
- 시간.수면(1.5)
+session = requests.Session()
+session.headers.update(HEADERS)
+rows = []
+for category, base in SOURCES:
+    for page in range(MAX_PAGES):
+        url = base if page == 0 else f"{base}?page={page}"
+        try:
+            r = session.get(url, timeout=30)
+        except Exception as e:
+            print(f"[{category}] {page + 1}페이지 오류: {e}")
+            break
+        print(f"[{category}] {page + 1}페이지 -> {r.status_code}")
+        if r.status_code != 200:
+            break
+        found = parse_page(r.text, category)
+        print(f"  상품 {len(found)}개")
+        if not found:
+            break
+        rows += found
+        time.sleep(1.5)
 
-행이 아니라면:
- raise SystemExit("수집된 상품이 없어서 기존 데이터를 그대로 둡니다.")
+if not rows:
+    raise SystemExit("수집된 상품이 없어서 기존 데이터를 그대로 둡니다.")
 
 # ----- 사진 저장 (이미 있으면 건너뜀) -----
-os.makedirs ("img", exist_ok=True)
+os.makedirs("img", exist_ok=True)
 
 
-def save_img(항목):
- path = f"img/{item['code']}.jpg"
- if os.path.exists(경로):
- 돌아가다
- 시도:
- r = session.get(아이템["src"), 헤더={"참조자": BASE + "/", 타임아웃=20)
- im = Image.open(io).BytesIO(r.content).convert("RGB")
- im.thumbnail((320, 320))
- im.save(경로, "JPEG", 품질=70)
- 예외: e:
- 인쇄 ("사진 실패:", 항목["코드"], e)
+def save_img(item):
+    path = f"img/{item['code']}.jpg"
+    if os.path.exists(path):
+        return
+    try:
+        r = session.get(item["src"], headers={"Referer": BASE + "/"}, timeout=20)
+        im = Image.open(io.BytesIO(r.content)).convert("RGB")
+        im.thumbnail((320, 320))
+        im.save(path, "JPEG", quality=70)
+    except Exception as e:
+        print("사진 실패:", item["code"], e)
 
 
-ThreadPoolExecutor(max_works=8)를 ex로 사용합니다:
- list(ex.map(save_img, 행))
+with ThreadPoolExecutor(max_workers=8) as ex:
+    list(ex.map(save_img, rows))
 
-행에 = {f"{it['code']}.jpg"를 유지합니다
+keep = {f"{it['code']}.jpg" for it in rows}
 for f in os.listdir("img"):
- f가 유지되지 않으면:
- os.remove(os.path.join("img, f))
+    if f not in keep:
+        os.remove(os.path.join("img", f))
 
 # ----- 가격 기록: 최근 30일 최고가보다 싸면 '이전 최고가'로 표시 -----
-KST = ZoneInfo("아시아/서울")
-지금 = datetime.now(KST)
+KST = ZoneInfo("Asia/Seoul")
+now = datetime.now(KST)
 today = now.strftime("%Y-%m-%d")
-컷오프 = (현재 - 시간 델타(일)=역사_DAYS).strftime("%Y-%m-%d")
+cutoff = (now - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d")
 hist = {}
 if os.path.exists("history.json"):
- open ("history.json, 인코딩="utf-8")을 f로 사용합니다:
- hist = json.load(f)
+    with open("history.json", encoding="utf-8") as f:
+        hist = json.load(f)
 
-일렬로 배열되어 있습니다:
- h = hist.setdefault(it["코드"], {})
- h[오늘] = it["가격"]
- d의 경우 [d의 경우 d의 경우 h의 경우]:
- 델 h[d]
- 참조 = max(h.values ())
- 그렇지 않다면 ["오래된"] 및 참조 > ["가격"]:
- it["오래된"], it["prev"] = ref, True
- it["img"] = f"img/{it['code']}.jpg" if os.path.exists(f"img/{it['code']}.jpg") else ""
+for it in rows:
+    h = hist.setdefault(it["code"], {})
+    h[today] = it["price"]
+    for d in [d for d in h if d < cutoff]:
+        del h[d]
+    ref = max(h.values())
+    if not it["old"] and ref > it["price"]:
+        it["old"], it["prev"] = ref, True
+    it["img"] = f"img/{it['code']}.jpg" if os.path.exists(f"img/{it['code']}.jpg") else ""
 
-행에 있는 활성 = {it["code"]
-hist = {c: h for c, h in hist. items() in active}
+active = {it["code"] for it in rows}
+hist = {c: h for c, h in hist.items() if c in active}
 
-open (" history.json", "w", 인코딩="utf-8")을 f로 사용합니다:
- json.dump(히스트, f, secure_ascii=false)
-출력 = [{k: v for k, v in it. k!= "src"}일 경우 items()]
-open ("data.json", "w", 인코딩="utf-8")을 f로 사용합니다:
- json.dump({ "updated": now.strftime("%Y-%m-%d %H:%M"), "items": out, f, secure_ascii=false)
+with open("history.json", "w", encoding="utf-8") as f:
+    json.dump(hist, f, ensure_ascii=False)
+out = [{k: v for k, v in it.items() if k != "src"} for it in rows]
+with open("data.json", "w", encoding="utf-8") as f:
+    json.dump({"updated": now.strftime("%Y-%m-%d %H:%M"), "items": out}, f, ensure_ascii=False)
 
-페이지 = @media (최소 너비:700 px) { .grid { 그리드-template-columns:repeat(3,1fr); }
+PAGE = """<!DOCTYPE html>
 <html lang="ko">
-<머리>
+<head>
 <meta charset="utf-8">
-<meta 이름="viewport" 콘텐츠="width=장치 너비, 초기 스케일=1, viewport-fit=cover">
-<meta 이름="애플-모바일 웹 앱 지원" 콘텐츠="예">
-<meta 이름="모바일 웹 앱 지원" 콘텐츠="예">
-<meta 이름="애플-모바일-웹앱-title" 콘텐츠="코스트코">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="코스트코">
 <title>코스트코 데일리 업데이트</title>
-<스타일>
- :root { --red:#e31837; --blue:#005daa; --bg:#f5f5f7; --card:#fff; --text:#222; --sub:#888; --line:#e6e6e6; }
- @media (prefers-색-scheme: 어두운) { :root { --bg:#111; --card:#1c1c1e; --text:#f2f2f2; --sub:#999; --line:#333; } }
- * { 상자-sizing:경계 상자;}
- 본문 { 여백:0; 배경:var(--bg); 색상:var(--text);
- 폰트 패밀리:-애플 시스템, 블링크맥시스템폰트, "말건 고딕", "애플 SD 고딕 네오", sans-serif; }
- 헤더 {위치:sticky; 상단:0; z-인덱스:10; 배경:var(--bg); 패딩:calc(env(안전 영역-삽입 상단,0 px) + 10 px) 12 px 8 px; 경계 하단:1 px 솔리드 var(--선); }
- h1 { 글꼴 크기:1.15rem; 여백:0 0 2 px; }
- .updated { 글꼴 크기:.78rem; 색상:var(--서브); 여백 하단:8 px; }
- .tabs {디스플레이:플렉스; 간격:6 px; 여백 하단:8 px; }
- .탭 {플렉스:1; 패딩:8 px 0; 테두리:1 px 솔리드 var(--line); 배경:var(--카드); 색상:var(--텍스트); 테두리-radius:20 px; 글꼴 크기:.9rem; }
- .tab.active {background:var(--red); 테두리 색상:var(--red); 색상:#ffff; 글꼴 무게:600; }
- 입력 [유형=검색] {폭:100%; 패딩:9 px 12 px; 테두리:1 px 솔리드 var(--line); 테두리:10 px; 배경:var(--카드); 색상:var(--텍스트); 글꼴 크기:1rem; }
- .count { 글꼴 크기:.8rem; 색상:var(--sub); 여백:8 px 12 px 0; }
- .grid { 디스플레이:grid; 그리드-template-columns:repeat(2,1fr); 갭:10 px; 패딩:10 px 12 px 계산(24 px + 환경(안전 영역 삽입 하단, 0 px)); }
- @media (최소 너비:700 px) { .grid { 그리드-template-columns:repeat(3,1fr); } }
- @media (최소 너비:1000 px) { .grid { 그리드-template-columns:repeat(4,1fr); } }
- .card {background:var(--card); 경계-radius:12 px; 오버플로:숨김; 경계:1 px 솔리드 var(--line); }
- .카드 a {색상:inherit; 텍스트 장식:none; 디스플레이:블록; }
- .card img {폭:100%; 측면 ratio:1/1; 객체 맞춤:포함; 배경:#fff; 디스플레이:블록; }
- .info { 패딩}:8 px 10 px 12 px; }
- .이름 { 글꼴 크기:}.88rem; 글꼴 무게:600; 줄 높이:1.3; 높이:2.6em; 오버플로우:숨김; 디스플레이:-웹킷 상자; -웹킷 줄 clamp:2; -웹킷 상자 방향:vertical; }
- .old { 글꼴 크기:.8rem; 색상:var(--서브); 텍스트 장식:선 통과;최소 높이:1.1em; 여백 상단:4 px; }
- .가격 { 글꼴 크기:1.1rem; 글꼴 무게:700; 색상:var(--red); }
- .badge {디스플레이: inline 블록; 배경:var(--red); 색상:#fff; 테두리-radius:6 px; 패딩:0 6 px; 글꼴 크기:.72rem; 여백-왼쪽:4 px; 세로-align:중간; }
- .badge.새 {배경:var(--파란색); }
- .비어 {텍스트 align:센터; 색상:var(--sub); 패딩:48 px 20 px; 그리드 열:1/-1; }
-</스타일>
-</머리>
-<바디>
+<style>
+  :root { --red:#e31837; --blue:#005daa; --bg:#f5f5f7; --card:#fff; --text:#222; --sub:#888; --line:#e6e6e6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --card:#1c1c1e; --text:#f2f2f2; --sub:#999; --line:#333; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo",sans-serif; }
+  header { position:sticky; top:0; z-index:10; background:var(--bg); padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 8px; border-bottom:1px solid var(--line); }
+  h1 { font-size:1.15rem; margin:0 0 2px; }
+  .updated { font-size:.78rem; color:var(--sub); margin-bottom:8px; }
+  .tabs { display:flex; gap:6px; margin-bottom:8px; }
+  .tab { flex:1; padding:8px 0; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:20px; font-size:.9rem; }
+  .tab.active { background:var(--red); border-color:var(--red); color:#fff; font-weight:600; }
+  input[type=search] { width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); font-size:1rem; }
+  .count { font-size:.8rem; color:var(--sub); margin:8px 12px 0; }
+  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; padding:10px 12px calc(24px + env(safe-area-inset-bottom,0px)); }
+  @media (min-width:700px) { .grid { grid-template-columns:repeat(3,1fr); } }
+  @media (min-width:1000px) { .grid { grid-template-columns:repeat(4,1fr); } }
+  .card { background:var(--card); border-radius:12px; overflow:hidden; border:1px solid var(--line); }
+  .card a { color:inherit; text-decoration:none; display:block; }
+  .card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#fff; display:block; }
+  .info { padding:8px 10px 12px; }
+  .name { font-size:.88rem; font-weight:600; line-height:1.3; height:2.6em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .old { font-size:.8rem; color:var(--sub); text-decoration:line-through; min-height:1.1em; margin-top:4px; }
+  .price { font-size:1.1rem; font-weight:700; color:var(--red); }
+  .badge { display:inline-block; background:var(--red); color:#fff; border-radius:6px; padding:0 6px; font-size:.72rem; margin-left:4px; vertical-align:middle; }
+  .badge.new { background:var(--blue); }
+  .empty { text-align:center; color:var(--sub); padding:48px 20px; grid-column:1/-1; }
+</style>
+</head>
+<body>
 <header>
- <h1>🛒 코스트코 데일리 업데이트</h1>
- <div class="updated" ID="updated">🕒 마지막 업데이트: 불러오는 중...</div>
- <div class="tabs">
- <버튼 class="탭 활성화" data-f="전체">전체</버튼>
- <버튼 class="탭" data-f="신상품">신상품</버튼>
- <버튼 class="탭" data-f="할인상품">할인상품</버튼>
- </div>
- <입력 유형="검색" ID="q" 자리 표시자="🔍"상품명 검색">
+  <h1>🛒 코스트코 데일리 업데이트</h1>
+  <div class="updated" id="updated">🕒 마지막 업데이트: 불러오는 중...</div>
+  <div class="tabs">
+    <button class="tab active" data-f="전체">전체</button>
+    <button class="tab" data-f="신상품">신상품</button>
+    <button class="tab" data-f="할인상품">할인상품</button>
+  </div>
+  <input type="search" id="q" placeholder="🔍 상품명 검색">
 </header>
 <div class="count" id="count"></div>
 <main class="grid" id="grid"></main>
-<스크립트>
-항목 = [], 필터링 = "전체", 키워드 = "";
-const esc = s => 문자열(s == null ? "" : s.replace(/[&<>)]/g, c => ({"&:"&"),<:"<"<"",">"">"""""""""""""""""""""""""""""""")"""""""""""""""""""""""")"}[c];"
-const가 승리했습니다 = n => n == null ? "가격 정보 없음" : n.toLocaleString("ko-KR") + "원";
-함수 카드(it) {
- oldLine = '<div class="old"> </div>, 배지 = "";
- 만약 (그것.old & it.price & it.old > it.price) {
- oldLine = '<div class="old"> + (it.prev ? "최근 최고가 ": "") + won(it.old) + '/div>';
- 배지 = '<span class="badge">' + Math.round((((it.old - it.price)) / it.old * 100) + '%↓</span>';
- } 그렇지 않으면 (it.cat === "할인상품" 배지 = '<span class="badge">할인가</span>';
- 그렇지 않으면 (it.cat === "신상품" 배지 = '<span class="badge new">NEW</span>;
- '<div class="card"><a href=' + esc(it.link) + '"target="_blank" rel="noopen">을 반환합니다. +
- '<img src=' + esc(it.img) + '"로딩="lazy" alt=""> +
- '<div class="info"><div class="name">' + esc(it.name ) + '</div>' + oldLine +
- '<div class="price">' + 원화(it.price) + 배지 + '</div></div></a></div>;
+<script>
+let ITEMS = [], filter = "전체", keyword = "";
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const won = n => n == null ? "가격 정보 없음" : n.toLocaleString("ko-KR") + "원";
+function card(it) {
+  let oldLine = '<div class="old">&nbsp;</div>', badge = "";
+  if (it.old && it.price && it.old > it.price) {
+    oldLine = '<div class="old">' + (it.prev ? "최근 최고가 " : "") + won(it.old) + '</div>';
+    badge = '<span class="badge">' + Math.round((it.old - it.price) / it.old * 100) + '%↓</span>';
+  } else if (it.cat === "할인상품") badge = '<span class="badge">할인가</span>';
+  else if (it.cat === "신상품") badge = '<span class="badge new">NEW</span>';
+  return '<div class="card"><a href="' + esc(it.link) + '" target="_blank" rel="noopener">' +
+    '<img src="' + esc(it.img) + '" loading="lazy" alt="">' +
+    '<div class="info"><div class="name">' + esc(it.name) + '</div>' + oldLine +
+    '<div class="price">' + won(it.price) + badge + '</div></div></a></div>';
 }
-함수 렌더링 () {
- const kw = 키워드.trim(.toLowerCase());
- const list = ITMS.filter (필터 === > (필터 = "전체" || it.cat === 필터) & & (!kw || it.name .toLowerCase(.includs(kw)));
- document.getElementById("count").텍스트 내용 = "총" + list.length + "개 상품";
- document.getElementById("grid").innerHTML = list.length ? list.map(카드).join ("): '<div class="empty">조건에 맞는 상품이 없어요.</div>';
+function render() {
+  const kw = keyword.trim().toLowerCase();
+  const list = ITEMS.filter(it => (filter === "전체" || it.cat === filter) && (!kw || it.name.toLowerCase().includes(kw)));
+  document.getElementById("count").textContent = "총 " + list.length + "개 상품";
+  document.getElementById("grid").innerHTML = list.length ? list.map(card).join("") : '<div class="empty">조건에 맞는 상품이 없어요.</div>';
 }
-문서.쿼리SelectorAll(.tab").각 항목(b => b.addEventListener("클릭", () => {
- 문서.쿼리SelectorAll(.tab").각각에 대해 (x => x.classList.remove("활성");
- b.classList.add("활성"); 필터 = b. dataset.f; () 렌더링;
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  b.classList.add("active"); filter = b.dataset.f; render();
 }));
-document.getElementById("q").addEventListener("입력", e => {키워드 = e.target.value; 렌더 (); });
-("data.json?t 가져오기=" + 날짜.나우()).then(r => r.json()).then(d => {
- 항목 = d. items;
- document.getElementById("업데이트됨").텍스트 내용 = "🕒 마지막 업데이트: " + d. updated;
- ()를 렌더링합니다;
-}). catch((() => {document.getElementById("업데이트됨").textContent = "데이터를 불러오지 못했어요"; });
+document.getElementById("q").addEventListener("input", e => { keyword = e.target.value; render(); });
+fetch("data.json?t=" + Date.now()).then(r => r.json()).then(d => {
+  ITEMS = d.items;
+  document.getElementById("updated").textContent = "🕒 마지막 업데이트: " + d.updated;
+  render();
+}).catch(() => { document.getElementById("updated").textContent = "데이터를 불러오지 못했어요"; });
 </script>
 </body>
 </html>
 """
 
-open ("index.html", "w", 인코딩="utf-8")을 f로 사용합니다:
- f.write(PAGE)
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(PAGE)
 
 print(f"완료! 상품 {len(rows)}개 저장 ({now.strftime('%Y-%m-%d %H:%M')})")
