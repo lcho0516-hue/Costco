@@ -1,0 +1,33 @@
+이름: 일일 costco
+
+위에:
+ 스케쥴:
+ - 크론: "0 21 * * *"   # 매일 한국시간 오전 6시
+ 워크플로우_dispatch: # 수동 실행 버튼
+
+권한:
+ 내용: 쓰기
+
+직업:
+ 기다:
+ 실행 중: 우분투-latest
+ 단계:
+ - 용도: actions/checkout@v4
+
+ - 용도: actions/setup-python@v5
+ 와 함께:
+ 파이썬 버전: "3.12"
+
+ - name: 라이브러리 설치
+ 실행: pip 설치 요청 beautifulsoup4 베개
+
+ - name: 크롤링 실행
+ 실행: python crawl.py
+
+ - name: 결과 저장
+ 달려.: |
+ git 구성 user.name "costco-봇"
+ git config user.email "bot@users.noreply.github.com "
+ git 추가 -A
+ git diff --cached --quiet || git commit -m "매일 업데이트"
+ 깃 푸시
